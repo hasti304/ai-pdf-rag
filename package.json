@@ -1,0 +1,8 @@
+{
+  "name": "ai-pdf-rag",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
