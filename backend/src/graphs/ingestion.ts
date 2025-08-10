@@ -2,254 +2,183 @@ import { Annotation, StateGraph, END } from "@langchain/langgraph";
 import { processPDFFile } from "../shared/documents.js";
 import { addDocumentsToVectorStore } from "../shared/retriever.js";
 
-// Define the state using Annotation with proper reducer configuration
+// Define state using Annotation instead of Zod
 const IngestionState = Annotation.Root({
-  files: Annotation<Array<{ filename: string; buffer: Buffer; size: number }>>(),
+  files: Annotation<Array<{ buffer: Buffer; filename: string }>>({
+    value: (left, right) => [...left, ...right],
+    default: () => [],
+  }),
   processedFiles: Annotation<string[]>({
-    value: (left: string[], right: string[]) => [...left, ...right],
+    value: (left, right) => [...left, ...right],
     default: () => [],
   }),
   totalChunks: Annotation<number>({
-    value: (left: number, right: number) => right, // Use latest value
+    value: (left: number, right: number) => left + right,
     default: () => 0,
   }),
-  errors: Annotation<string[]>({
-    value: (left: string[], right: string[]) => [...left, ...right],
-    default: () => [],
-  }),
   status: Annotation<"pending" | "processing" | "completed" | "failed">({
-    value: (left, right) => right, // Use latest value
+    value: (left, right) => right,
     default: () => "pending" as const,
   }),
-  message: Annotation<string>({
-    value: (left: string, right: string) => right, // Use latest value
+  error: Annotation<string>({
+    value: (left: string, right: string) => right,
     default: () => "",
-  }),
-  documents: Annotation<any[]>({
-    value: (left: any[], right: any[]) => [...left, ...right],
-    default: () => [],
   }),
 });
 
 type IngestionStateType = typeof IngestionState.State;
 
-// Node 1: Validate uploaded files
+// Node 1: Validate and prepare files
 async function validateFiles(state: IngestionStateType): Promise<Partial<IngestionStateType>> {
-  console.log("🔍 Validating uploaded files...");
+  console.log(`📋 Validating ${state.files.length} files...`);
   
-  try {
-    const errors: string[] = [];
-    
-    // Check if any files were provided
-    if (!state.files || state.files.length === 0) {
-      errors.push("No files provided for processing");
-    } else {
-      // Validate each file
-      state.files.forEach((file: any, index: number) => {
-        try {
-          // Check file size
-          if (file.size > 10 * 1024 * 1024) { // 10MB limit
-            errors.push(`File "${file.filename}" exceeds 10MB size limit`);
-          }
-          
-          // Check file extension
-          if (!file.filename.toLowerCase().endsWith('.pdf')) {
-            errors.push(`File "${file.filename}" is not a PDF file`);
-          }
-          
-          // Check PDF signature
-          const pdfSignature = file.buffer.slice(0, 4).toString();
-          if (pdfSignature !== '%PDF') {
-            errors.push(`File "${file.filename}" does not appear to be a valid PDF`);
-          }
-        } catch (error: unknown) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`Error validating file "${file.filename}": ${errorMessage}`);
-        }
-      });
-    }
-    
-    if (errors.length > 0) {
-      console.log(`❌ Validation failed with ${errors.length} errors`);
-      return {
-        status: "failed",
-        errors: errors,
-        message: `Validation failed: ${errors.join(", ")}`,
-      };
-    }
-    
-    console.log(`✅ All ${state.files.length} files passed validation`);
-    return {
-      status: "processing",
-      message: `Validated ${state.files.length} files successfully`,
-    };
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Error in file validation:", errorMessage);
+  if (state.files.length === 0) {
     return {
       status: "failed",
-      errors: [`Validation error: ${errorMessage}`],
-      message: "File validation failed",
+      error: "No files provided for ingestion",
     };
   }
+
+  // Basic file validation
+  const invalidFiles: string[] = [];
+  
+  for (const file of state.files) {
+    if (!file.buffer || file.buffer.length === 0) {
+      invalidFiles.push(`${file.filename}: Empty or invalid buffer`);
+    }
+    
+    if (!file.filename.toLowerCase().endsWith('.pdf')) {
+      invalidFiles.push(`${file.filename}: Not a PDF file`);
+    }
+  }
+
+  if (invalidFiles.length > 0) {
+    return {
+      status: "failed",
+      error: `Invalid files detected: ${invalidFiles.join(', ')}`,
+    };
+  }
+
+  console.log(`✅ All ${state.files.length} files validated successfully`);
+  
+  return {
+    status: "processing",
+  };
 }
 
-// Node 2: Process PDFs into document chunks
+// Node 2: Process PDF files
 async function processPDFs(state: IngestionStateType): Promise<Partial<IngestionStateType>> {
-  console.log("📄 Processing PDFs into document chunks...");
+  console.log(`🔄 Processing ${state.files.length} PDF files...`);
+  
+  const processedFiles: string[] = [];
+  let totalChunks = 0;
   
   try {
-    const allDocuments: any[] = [];
-    const processedFiles: string[] = [];
-    const errors: string[] = [];
-    
     for (const file of state.files) {
-      try {
-        console.log(`Processing: ${file.filename}`);
-        
-        // Process the PDF file into chunks
-        const documents = await processPDFFile(
-          file.buffer,
-          file.filename,
-          {
-            uploadedAt: new Date().toISOString(),
-            fileSize: file.size,
-          }
-        );
-        
-        allDocuments.push(...documents);
-        processedFiles.push(file.filename);
-        
-        console.log(`✅ Processed ${file.filename}: ${documents.length} chunks created`);
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`❌ Error processing ${file.filename}:`, errorMessage);
-        errors.push(`Failed to process "${file.filename}": ${errorMessage}`);
+      console.log(`📄 Processing: ${file.filename}`);
+      
+      // Check if buffer appears to be a valid PDF
+      const pdfHeader = file.buffer.subarray(0, 4).toString('ascii');
+      if (!pdfHeader.startsWith('%PDF')) {
+        throw new Error(`File "${file.filename}" does not appear to be a valid PDF`);
       }
+      
+      // Process the PDF file
+      const documents = await processPDFFile(
+        file.buffer,
+        file.filename,
+        {
+          uploadedAt: new Date().toISOString(),
+          source: 'upload',
+        }
+      );
+      
+      if (documents.length === 0) {
+        throw new Error(`No content could be extracted from ${file.filename}`);
+      }
+      
+      // Store documents in vector store
+      await addDocumentsToVectorStore(documents);
+      
+      processedFiles.push(file.filename);
+      totalChunks += documents.length;
+      
+      console.log(`✅ Successfully processed ${file.filename} (${documents.length} chunks)`);
     }
     
-    if (allDocuments.length === 0) {
-      return {
-        status: "failed",
-        errors: errors,
-        message: "No documents were successfully processed",
-      };
-    }
-    
-    // Store documents in state for next step
     return {
-      processedFiles: processedFiles,
-      totalChunks: allDocuments.length,
-      errors: errors,
-      documents: allDocuments,
-      message: `Processed ${processedFiles.length} files into ${allDocuments.length} chunks`,
-    };
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Error in PDF processing:", errorMessage);
-    return {
-      status: "failed",
-      errors: [`PDF processing error: ${errorMessage}`],
-      message: "PDF processing failed",
-    };
-  }
-}
-
-// Node 3: Store embeddings in vector database
-async function storeEmbeddings(state: IngestionStateType): Promise<Partial<IngestionStateType>> {
-  console.log("🔄 Generating embeddings and storing in vector database...");
-  
-  try {
-    // Get documents from state
-    const documents = state.documents;
-    
-    if (!documents || documents.length === 0) {
-      throw new Error("No documents to store");
-    }
-    
-    // Add documents to vector store (this will generate embeddings automatically)
-    await addDocumentsToVectorStore(documents);
-    
-    console.log(`✅ Successfully stored ${documents.length} document chunks with embeddings`);
-    
-    return {
+      processedFiles,
+      totalChunks,
       status: "completed",
-      message: `Successfully processed and stored ${state.processedFiles.length} files (${documents.length} chunks) in vector database`,
     };
+    
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Error storing embeddings:", errorMessage);
+    console.error('❌ Error processing PDFs:', errorMessage);
+    
     return {
+      processedFiles,
+      totalChunks,
       status: "failed",
-      errors: [`Embedding storage error: ${errorMessage}`],
-      message: "Failed to store embeddings in vector database",
+      error: `❌ Ingestion failed: ${errorMessage}`,
     };
   }
 }
 
-// Node 4: Handle completion
-async function handleCompletion(state: IngestionStateType): Promise<Partial<IngestionStateType>> {
-  if (state.status === "completed") {
-    console.log("🎉 Ingestion process completed successfully!");
-    return {
-      message: `✅ Ingestion completed: ${state.processedFiles.length} files processed, ${state.totalChunks} chunks stored`,
-    };
-  } else {
-    console.log("❌ Ingestion process failed");
-    return {
-      message: `❌ Ingestion failed: ${state.errors.join(", ")}`,
-    };
+// Node 3: Finalize ingestion
+async function finalizeIngestion(state: IngestionStateType): Promise<Partial<IngestionStateType>> {
+  if (state.status === "failed") {
+    console.log(`❌ Ingestion failed: ${state.error}`);
+    return {};
   }
+  
+  if (state.status === "completed") {
+    console.log(`✅ Ingestion completed successfully!`);
+    console.log(`   Files processed: ${state.processedFiles.length}`);
+    console.log(`   Total chunks created: ${state.totalChunks}`);
+    console.log(`   Files: ${state.processedFiles.join(', ')}`);
+  }
+  
+  return {};
 }
 
 // Create the ingestion graph using Annotation
 const ingestionGraph = new StateGraph(IngestionState)
   .addNode("validate_files", validateFiles)
   .addNode("process_pdfs", processPDFs)
-  .addNode("store_embeddings", storeEmbeddings)
-  .addNode("handle_completion", handleCompletion)
+  .addNode("finalize", finalizeIngestion)
   .addEdge("__start__", "validate_files")
   .addConditionalEdges(
     "validate_files",
-    (state: IngestionStateType) => state.status === "failed" ? "handle_completion" : "process_pdfs"
+    (state: IngestionStateType) => {
+      if (state.status === "failed") return "finalize";
+      return "process_pdfs";
+    }
   )
-  .addConditionalEdges(
-    "process_pdfs",
-    (state: IngestionStateType) => state.totalChunks > 0 ? "store_embeddings" : "handle_completion"
-  )
-  .addEdge("store_embeddings", "handle_completion")
-  .addEdge("handle_completion", END);
+  .addEdge("process_pdfs", "finalize")
+  .addEdge("finalize", END);
 
 // Compile the graph
 export const compiledIngestionGraph = ingestionGraph.compile();
 
-// Helper function to run ingestion
-export async function runIngestion(files: Array<{ filename: string; buffer: Buffer; size: number }>) {
-  console.log("🚀 Starting PDF ingestion process...");
+// Helper function to run the ingestion process
+export async function runIngestion(files: Array<{ buffer: Buffer; filename: string }>) {
+  console.log('🚀 Starting ingestion process...');
   
-  try {
-    const initialState = {
-      files,
-      processedFiles: [],
-      totalChunks: 0,
-      errors: [],
-      status: "pending" as const,
-      message: "Starting ingestion process...",
-      documents: [],
-    };
-    
-    const result = await compiledIngestionGraph.invoke(initialState);
-    
-    console.log("📊 Ingestion process summary:");
-    console.log(`   Status: ${result.status}`);
-    console.log(`   Files processed: ${result.processedFiles?.length || 0}`);
-    console.log(`   Total chunks: ${result.totalChunks}`);
-    console.log(`   Errors: ${result.errors?.length || 0}`);
-    
-    return result;
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Ingestion process failed:", errorMessage);
-    throw new Error(errorMessage);
-  }
+  const initialState = {
+    files,
+    processedFiles: [],
+    totalChunks: 0,
+    status: "pending" as const,
+    error: "",
+  };
+  
+  const result = await compiledIngestionGraph.invoke(initialState);
+  
+  console.log('📊 Ingestion process summary:');
+  console.log(`   Status: ${result.status}`);
+  console.log(`   Files processed: ${result.processedFiles.length}`);
+  console.log(`   Total chunks: ${result.totalChunks}`);
+  
+  return result;
 }
