@@ -101,7 +101,8 @@ export default function Home() {
 
       console.log('Sending request to backend...');
 
-      const response = await axios.post<UploadResponse>('https://ai-pdf-chatbot-backend.onrender.com', formData, {
+      // ✅ FIXED: Added /ingest endpoint
+      const response = await axios.post<UploadResponse>('https://ai-pdf-chatbot-backend-hjfo.onrender.com/ingest', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -133,7 +134,7 @@ export default function Home() {
           errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
           console.log('Server error response:', error.response.data);
         } else if (error.request) {
-          errorMessage = 'No response from server. Check if backend is running on port 2024.';
+          errorMessage = 'No response from server. Check if backend is running.';
         } else {
           errorMessage = error.message;
         }
@@ -171,7 +172,8 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://ai-pdf-chatbot-backend.onrender.com', {
+      // ✅ FIXED: Added /chat endpoint
+      const response = await fetch('https://ai-pdf-chatbot-backend-hjfo.onrender.com/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
