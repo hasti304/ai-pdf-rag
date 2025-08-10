@@ -101,7 +101,7 @@ export default function Home() {
 
       console.log('Sending request to backend...');
 
-      const response = await axios.post<UploadResponse>('http://localhost:2024/ingest', formData, {
+      const response = await axios.post<UploadResponse>('https://ai-pdf-chatbot-backend.onrender.com', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -171,7 +171,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:2024/chat', {
+      const response = await fetch('https://ai-pdf-chatbot-backend.onrender.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

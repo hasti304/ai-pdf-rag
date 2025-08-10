@@ -11,7 +11,7 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:3000", // Local development
-    "https://ai-pdf-rag-frontend-653h0v2s6-hasti-panchals-projects.vercel.app" 
+    "https://ai-pdf-rag-frontend-4epete1w9-hasti-panchals-projects.vercel.app" 
   ],
   credentials: true,
 }));
