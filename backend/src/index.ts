@@ -7,13 +7,15 @@ import { compiledRetrievalGraph, runRetrieval, runRetrievalSimple } from './grap
 
 const app = express();
 
-// Middleware
+// Middleware - FIXED CORS Configuration
 app.use(cors({
   origin: [
     "http://localhost:3000", // Local development
-    "https://ai-pdf-rag-frontend-4o86yt8zn-hasti-panchals-projects.vercel.app" 
+    "https://ai-pdf-rag-frontend-r3c2t8plm-hasti-panchals-projects.vercel.app", // ✅ Your exact Vercel URL
+    "https://*.vercel.app", // Allow all Vercel subdomains
+    "*" // ✅ Temporary - allows all origins for immediate testing
   ],
-  credentials: true,
+  credentials: false, // Must be false when using wildcard
 }));
 
 app.use(express.json());
@@ -136,6 +138,9 @@ app.post('/chat', async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*', // ✅ Additional CORS header
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
     });
 
     const stream = runRetrieval(question);
@@ -216,7 +221,7 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-// Start server
+// Start server - FIXED with proper host binding and TypeScript error resolved
 async function startServer() {
   try {
     console.log('🚀 Starting AI PDF Chatbot server...');
@@ -244,8 +249,9 @@ async function startServer() {
     await runRetrievalSimple("test query");
     console.log('✅ Retriever and embeddings working correctly');
 
-    app.listen(config.server.port, () => {
-      console.log(`\n✅ Server running successfully!`);
+    // ✅ FIXED: Use config.server.port (already a number) and bind to all interfaces
+    app.listen(config.server.port, '0.0.0.0', () => {
+      console.log(`\n✅ Server running successfully on 0.0.0.0:${config.server.port}!`);
       console.log(`📍 Health check: http://localhost:${config.server.port}/health`);
       console.log(`📤 Upload PDFs: POST http://localhost:${config.server.port}/ingest`);
       console.log(`💬 Ask questions: POST http://localhost:${config.server.port}/chat`);
