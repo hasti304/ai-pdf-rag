@@ -7,13 +7,13 @@ import { compiledRetrievalGraph, runRetrieval, runRetrievalSimple } from './grap
 
 const app = express();
 
-// Middleware - FIXED CORS Configuration
+// Middleware - FIXED CORS Configuration for all Vercel URLs
 app.use(cors({
   origin: [
     "http://localhost:3000", // Local development
-    "https://ai-pdf-rag-frontend-r3c2t8plm-hasti-panchals-projects.vercel.app", // ✅ Your exact Vercel URL
-    "https://*.vercel.app", // Allow all Vercel subdomains
-    "*" // ✅ Temporary - allows all origins for immediate testing
+    "https://ai-pdf-rag-frontend-axnxxh1vn-hasti-panchals-projects.vercel.app", // ✅ Your current Vercel URL
+    /https:\/\/.*\.vercel\.app$/, // ✅ Regex pattern for all Vercel apps
+    "*" // ✅ Allows all origins - fallback solution
   ],
   credentials: false, // Must be false when using wildcard
 }));
@@ -138,7 +138,7 @@ app.post('/chat', async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*', // ✅ Additional CORS header
+      'Access-Control-Allow-Origin': '*', // ✅ Additional CORS header for streaming
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     });
