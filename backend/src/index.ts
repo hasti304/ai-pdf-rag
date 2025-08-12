@@ -7,6 +7,8 @@ import { dirname } from 'path';
 import { runIngestion } from './graphs/ingestion.js';
 import { runRetrieval } from './graphs/retrieval.js';
 import { config } from './shared/config.js';
+import { initializeAnalytics, analyticsMiddleware, trackEvent, trackError } from './middleware/analytics.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,12 +21,15 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Add analytics middleware
+app.use(initializeAnalytics);
+
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: {
-    fileSize: config.documents.maxFileSize, // Fixed: use documents.maxFileSize
+    fileSize: config.documents.maxFileSize,
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
@@ -39,9 +44,9 @@ console.log('🚀 Starting AI PDF Chatbot server...');
 console.log('📊 Configuration:');
 console.log(`   Port: ${PORT}`);
 console.log(`   OpenAI Model: ${config.openai.model}`);
-console.log(`   Embedding Model: ${config.openai.embeddingModel}`); // Fixed: use openai.embeddingModel
+console.log(`   Embedding Model: ${config.openai.embeddingModel}`);
 console.log(`   Supabase Table: ${config.supabase.tableName}`);
-console.log(`   Max File Size: ${Math.round(config.documents.maxFileSize / 1024 / 1024)}MB`); // Fixed: use documents.maxFileSize
+console.log(`   Max File Size: ${Math.round(config.documents.maxFileSize / 1024 / 1024)}MB`);
 console.log(`   Retrieval K: ${config.retrieval.k}`);
 
 // Test database connections
@@ -82,112 +87,185 @@ app.get('/health', (req, res) => {
   });
 });
 
-// PDF ingestion endpoint
-app.post('/ingest', upload.array('files', 10), async (req, res) => {
-  try {
-    console.log(`📤 Received ${req.files?.length || 0} files for ingestion`);
+// PDF ingestion endpoint with analytics tracking
+app.post('/ingest', 
+  analyticsMiddleware('document_upload'), 
+  upload.array('files', 10), 
+  async (req, res) => {
+    const startTime = Date.now();
     
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No files provided'
-      });
-    }
-
-    // Convert uploaded files to the expected format
-    const files = (req.files as Express.Multer.File[]).map(file => ({
-      buffer: file.buffer,
-      filename: file.originalname
-    }));
-
-    console.log(`📋 Processing files: ${files.map(f => f.filename).join(', ')}`);
-
-    // Run the ingestion process
-    const result = await runIngestion(files);
-
-    if (result.status === 'failed') {
-      return res.status(500).json({
-        success: false,
-        error: result.error || 'Ingestion failed'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Files ingested successfully',
-      data: {
-        filesProcessed: result.processedFiles.length,
-        totalChunks: result.totalChunks,
-        files: result.processedFiles
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Ingestion error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      error: `Ingestion failed: ${errorMessage}`
-    });
-  }
-});
-
-// Chat endpoint with streaming support
-app.post('/chat', async (req, res) => {
-  try {
-    const { question } = req.body;
-
-    if (!question || typeof question !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Question is required and must be a string'
-      });
-    }
-
-    console.log(`💬 Processing question: "${question}"`);
-
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Run retrieval with streaming
-    const generator = runRetrieval(question);
-
-    for await (const chunk of generator) {
-      if (chunk.type === 'error') {
-        res.write(`error: ${chunk.data}\n`);
-        break;
-      } else if (chunk.type === 'answer_chunk') {
-        res.write(chunk.data);
-      } else if (chunk.type === 'sources') {
-        res.write(`\n\n**Sources:**\n`);
-        // Fixed: Properly type and check sources data
-        const sources = chunk.data as Array<{
-          filename: string;
-          chunkIndex?: number;
-          content: string;
-          relevanceScore?: number;
-        }>;
-        sources.forEach((source, index) => {
-          res.write(`${index + 1}. ${source.filename} (Relevance: ${Math.round((source.relevanceScore || 0.8) * 100)}%)\n`);
+    try {
+      console.log(`📤 Received ${req.files?.length || 0} files for ingestion`);
+      
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No files provided'
         });
-      } else if (chunk.type === 'complete') {
-        res.write('\n\n--- Response Complete ---');
-        break;
       }
+
+      // Convert uploaded files to the expected format
+      const files = (req.files as Express.Multer.File[]).map(file => ({
+        buffer: file.buffer,
+        filename: file.originalname
+      }));
+
+      console.log(`📋 Processing files: ${files.map(f => f.filename).join(', ')}`);
+
+      // Run the ingestion process
+      const result = await runIngestion(files);
+
+      if (result.status === 'failed') {
+        return res.status(500).json({
+          success: false,
+          error: result.error || 'Ingestion failed'
+        });
+      }
+
+      // Track successful upload with detailed metrics
+      await trackEvent({
+        event_type: 'document_upload',
+        user_id: req.analytics?.userId,
+        session_id: req.analytics?.sessionId,
+        metadata: {
+          files_count: files.length,
+          total_file_size: files.reduce((total, f) => total + f.buffer.length, 0),
+          filenames: files.map(f => f.filename),
+          processing_time: Date.now() - startTime,
+          chunks_created: result.totalChunks,
+          success: true
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      res.json({
+        success: true,
+        message: 'Files ingested successfully',
+        data: {
+          filesProcessed: result.processedFiles.length,
+          totalChunks: result.totalChunks,
+          files: result.processedFiles
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Ingestion error:', error);
+      
+      // Track failed upload
+      await trackError(error as Error, {
+        endpoint: '/ingest',
+        files_count: (req.files as Express.Multer.File[])?.length || 0,
+        processing_time: Date.now() - startTime
+      }, req);
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({
+        success: false,
+        error: `Ingestion failed: ${errorMessage}`
+      });
     }
-
-    res.end();
-
-  } catch (error) {
-    console.error('❌ Chat error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.write(`Error: ${errorMessage}`);
-    res.end();
   }
-});
+);
+
+// Chat endpoint with streaming support and analytics tracking
+app.post('/chat', 
+  analyticsMiddleware('question_asked'),
+  async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      const { question } = req.body;
+
+      if (!question || typeof question !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'Question is required and must be a string'
+        });
+      }
+
+      console.log(`💬 Processing question: "${question}"`);
+
+      // Track the question before processing
+      await trackEvent({
+        event_type: 'question_asked',
+        user_id: req.analytics?.userId,
+        session_id: req.analytics?.sessionId,
+        metadata: {
+          question: question,
+          question_length: question.length,
+          timestamp: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      // Set headers for streaming
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      // Run retrieval with streaming
+      const generator = runRetrieval(question);
+
+      for await (const chunk of generator) {
+        if (chunk.type === 'error') {
+          res.write(`error: ${chunk.data}\n`);
+          break;
+        } else if (chunk.type === 'answer_chunk') {
+          res.write(chunk.data);
+        } else if (chunk.type === 'sources') {
+          res.write(`\n\n**Sources:**\n`);
+          const sources = chunk.data as Array<{
+            filename: string;
+            chunkIndex?: number;
+            content: string;
+            relevanceScore?: number;
+          }>;
+          sources.forEach((source, index) => {
+            res.write(`${index + 1}. ${source.filename} (Relevance: ${Math.round((source.relevanceScore || 0.8) * 100)}%)\n`);
+          });
+        } else if (chunk.type === 'complete') {
+          res.write('\n\n--- Response Complete ---');
+          break;
+        }
+      }
+
+      // Track completion after streaming ends
+      res.on('finish', async () => {
+        const processingTime = Date.now() - startTime;
+        
+        await trackEvent({
+          event_type: 'api_call',
+          user_id: req.analytics?.userId,
+          session_id: req.analytics?.sessionId,
+          metadata: {
+            endpoint: '/chat',
+            question,
+            response_time: processingTime,
+            success: true,
+            timestamp: new Date().toISOString()
+          },
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      res.end();
+
+    } catch (error) {
+      console.error('❌ Chat error:', error);
+      
+      await trackError(error as Error, {
+        endpoint: '/chat',
+        question: req.body.question,
+        processing_time: Date.now() - startTime
+      }, req);
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.write(`Error: ${errorMessage}`);
+      res.end();
+    }
+  }
+);
 
 // Serve static files from Next.js build
 const frontendPath = path.join(__dirname, '../../frontend/.next/static');
@@ -200,7 +278,10 @@ app.use('/_next/static', express.static(frontendPath));
 // Serve the main HTML file
 app.get('*', (req, res, next) => {
   // Skip API routes
-  if (req.path.startsWith('/health') || req.path.startsWith('/ingest') || req.path.startsWith('/chat')) {
+  if (req.path.startsWith('/health') || 
+      req.path.startsWith('/ingest') || 
+      req.path.startsWith('/chat') ||
+      req.path.startsWith('/analytics')) {
     return next();
   }
 
@@ -211,7 +292,7 @@ app.get('*', (req, res, next) => {
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
     } else {
-      // Fixed: Use send() instead of html()
+      // Fallback response if frontend files aren't available
       res.status(200).send(`
         <!DOCTYPE html>
         <html>
@@ -233,6 +314,7 @@ app.get('*', (req, res, next) => {
               <li><strong>Health Check:</strong> GET <code>/health</code></li>
               <li><strong>Upload PDFs:</strong> POST <code>/ingest</code></li>
               <li><strong>Ask Questions:</strong> POST <code>/chat</code></li>
+              <li><strong>Analytics Dashboard:</strong> GET <code>/analytics/dashboard</code></li>
             </ul>
           </div>
 
@@ -257,11 +339,18 @@ app.get('*', (req, res, next) => {
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ Server error:', error.message);
   
+  // Track server errors
+  trackError(error, {
+    endpoint: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  }, req);
+  
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
         success: false,
-        error: `File too large. Maximum size is ${Math.round(config.documents.maxFileSize / 1024 / 1024)}MB` // Fixed: use documents.maxFileSize
+        error: `File too large. Maximum size is ${Math.round(config.documents.maxFileSize / 1024 / 1024)}MB`
       });
     }
   }
@@ -279,7 +368,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`📤 Upload PDFs: POST http://localhost:${PORT}/ingest`);
   console.log(`💬 Ask questions: POST http://localhost:${PORT}/chat`);
+  console.log(`📊 Analytics: GET http://localhost:${PORT}/analytics/dashboard`);
   console.log(`🎯 Ready to process PDFs and answer questions!`);
 });
+
+// Add analytics routes
+app.use('/analytics', analyticsRoutes);
 
 export default app;
