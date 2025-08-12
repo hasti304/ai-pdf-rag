@@ -1,34 +1,56 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "AI PDF RAG Chatbot Backend",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "build": "cd ../frontend && npm install && npm run build && cd ../backend && npm install && tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rimraf dist"
   },
+  "keywords": [
+    "ai",
+    "pdf",
+    "rag",
+    "chatbot",
+    "langchain",
+    "openai",
+    "supabase"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
   "dependencies": {
     "@langchain/community": "^0.3.0",
     "@langchain/core": "^0.3.0",
-    "@langchain/langgraph": "^0.2.74",
+    "@langchain/langgraph": "^0.2.0",
     "@langchain/openai": "^0.3.0",
-    "@supabase/supabase-js": "^2.45.4",
+    "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "langchain": "^0.3.0",
     "multer": "^1.4.5-lts.1",
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/multer": "^1.4.12",
-    "@types/node": "^22.5.4",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.14.0",
     "@types/pdf-parse": "^1.1.4",
-    "tsx": "^4.19.0",
-    "typescript": "^5.5.4"
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }
