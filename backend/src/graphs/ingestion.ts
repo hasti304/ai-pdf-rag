@@ -5,11 +5,11 @@ import { addDocumentsToVectorStore } from "../shared/retriever.js";
 // Define state using Annotation instead of Zod
 const IngestionState = Annotation.Root({
   files: Annotation<Array<{ buffer: Buffer; filename: string }>>({
-    value: (left, right) => [...left, ...right],
+    value: (left: Array<{ buffer: Buffer; filename: string }>, right: Array<{ buffer: Buffer; filename: string }>) => [...left, ...right],
     default: () => [],
   }),
   processedFiles: Annotation<string[]>({
-    value: (left, right) => [...left, ...right],
+    value: (left: string[], right: string[]) => [...left, ...right],
     default: () => [],
   }),
   totalChunks: Annotation<number>({
@@ -17,7 +17,7 @@ const IngestionState = Annotation.Root({
     default: () => 0,
   }),
   status: Annotation<"pending" | "processing" | "completed" | "failed">({
-    value: (left, right) => right,
+    value: (left: "pending" | "processing" | "completed" | "failed", right: "pending" | "processing" | "completed" | "failed") => right,
     default: () => "pending" as const,
   }),
   error: Annotation<string>({

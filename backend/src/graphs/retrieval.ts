@@ -12,7 +12,7 @@ const RetrievalState = Annotation.Root({
     metadata: Record<string, any>;
     score?: number;
   }>>({
-    value: (left, right) => [...left, ...right],
+    value: (left: Array<{content: string; metadata: Record<string, any>; score?: number}>, right: Array<{content: string; metadata: Record<string, any>; score?: number}>) => [...left, ...right],
     default: () => [],
   }),
   answer: Annotation<string>({
@@ -25,11 +25,11 @@ const RetrievalState = Annotation.Root({
     content: string;
     relevanceScore?: number;
   }>>({
-    value: (left, right) => [...left, ...right],
+    value: (left: Array<{filename: string; chunkIndex?: number; content: string; relevanceScore?: number}>, right: Array<{filename: string; chunkIndex?: number; content: string; relevanceScore?: number}>) => [...left, ...right],
     default: () => [],
   }),
   status: Annotation<"pending" | "retrieving" | "generating" | "completed" | "failed">({
-    value: (left, right) => right, // Use latest value
+    value: (left: "pending" | "retrieving" | "generating" | "completed" | "failed", right: "pending" | "retrieving" | "generating" | "completed" | "failed") => right, // Use latest value
     default: () => "pending" as const,
   }),
   error: Annotation<string>({
@@ -97,7 +97,7 @@ async function retrieveDocuments(state: RetrievalStateType): Promise<Partial<Ret
     }
     
     // Format retrieved documents
-    const retrievedDocuments = documents.map((doc, index) => ({
+    const retrievedDocuments = documents.map((doc: any, index: number) => ({
       content: doc.pageContent,
       metadata: doc.metadata || {},
       score: (doc.metadata as any)?.score || 0.8,
@@ -126,7 +126,7 @@ async function generateResponse(state: RetrievalStateType): Promise<Partial<Retr
   try {
     // Format context from retrieved documents
     const context = state.retrievedDocuments
-      .map((doc, index) => {
+      .map((doc: any, index: number) => {
         const filename = doc.metadata.filename || `Document ${index + 1}`;
         const chunkIndex = doc.metadata.chunkIndex || 0;
         
@@ -149,7 +149,7 @@ ${doc.content}`;
     const answer = response.content as string;
     
     // Extract and format sources
-    const sources = state.retrievedDocuments.map((doc, index) => ({
+    const sources = state.retrievedDocuments.map((doc: any, index: number) => ({
       filename: doc.metadata.filename || `Document ${index + 1}`,
       chunkIndex: doc.metadata.chunkIndex || index,
       content: doc.content.substring(0, 200) + "...",
@@ -281,3 +281,4 @@ export async function runRetrievalSimple(question: string) {
   
   return result;
 }
+  
