@@ -1,5 +1,5 @@
 import express from 'express';
-import { analyticsService } from '../servives/analyticsService';
+import { analyticsService } from '../services/analyticsService.js';
 import { trackEvent } from '../middleware/analytics.js';
 
 const router = express.Router();

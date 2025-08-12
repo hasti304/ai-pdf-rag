@@ -1,284 +1,259 @@
-import { Annotation, StateGraph, END } from "@langchain/langgraph";
-import { ChatOpenAI } from "@langchain/openai";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { searchDocuments } from "../shared/retriever.js";
-import { config } from "../shared/config.js";
+import { ChatOpenAI } from '@langchain/openai';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { config } from '../shared/config.js';
+import { hybridRetriever } from '../shared/hybridRetriever.js';
+import { queryAnalyzer } from '../services/queryAnalyzer.js';
+import { createClient } from '@supabase/supabase-js';
+import { OpenAIEmbeddings } from '@langchain/openai';
 
-// Define the state using Annotation instead of Zod
-const RetrievalState = Annotation.Root({
-  question: Annotation<string>(),
-  retrievedDocuments: Annotation<Array<{
-    content: string;
-    metadata: Record<string, any>;
-    score?: number;
-  }>>({
-    value: (left: Array<{content: string; metadata: Record<string, any>; score?: number}>, right: Array<{content: string; metadata: Record<string, any>; score?: number}>) => [...left, ...right],
-    default: () => [],
-  }),
-  answer: Annotation<string>({
-    value: (left: string, right: string) => right, // Use latest value
-    default: () => "",
-  }),
-  sources: Annotation<Array<{
-    filename: string;
-    chunkIndex?: number;
-    content: string;
-    relevanceScore?: number;
-  }>>({
-    value: (left: Array<{filename: string; chunkIndex?: number; content: string; relevanceScore?: number}>, right: Array<{filename: string; chunkIndex?: number; content: string; relevanceScore?: number}>) => [...left, ...right],
-    default: () => [],
-  }),
-  status: Annotation<"pending" | "retrieving" | "generating" | "completed" | "failed">({
-    value: (left: "pending" | "retrieving" | "generating" | "completed" | "failed", right: "pending" | "retrieving" | "generating" | "completed" | "failed") => right, // Use latest value
-    default: () => "pending" as const,
-  }),
-  error: Annotation<string>({
-    value: (left: string, right: string) => right, // Use latest value
-    default: () => "",
-  }),
+// Initialize Supabase and embeddings for basic retrieval
+const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey);
+const embeddings = new OpenAIEmbeddings({
+  openAIApiKey: config.openai.apiKey,
+  modelName: config.openai.embeddingModel,
 });
 
-type RetrievalStateType = typeof RetrievalState.State;
-
-// Initialize OpenAI chat model
-const chatModel = new ChatOpenAI({
+// Initialize the language model
+const model = new ChatOpenAI({
   openAIApiKey: config.openai.apiKey,
   modelName: config.openai.model,
   temperature: 0.1,
   streaming: true,
 });
 
-// Create the RAG prompt template
-const RAG_PROMPT = ChatPromptTemplate.fromMessages([
-  [
-    "system",
-    `You are a helpful AI assistant that answers questions based on provided document context.
+// Define types to fix implicit any errors
+interface DocumentResult {
+  pageContent: string;
+  metadata: {
+    filename?: string;
+    chunkIndex?: number;
+    [key: string]: any;
+  };
+}
 
-INSTRUCTIONS:
-1. Use ONLY the provided context to answer questions
-2. If the context doesn't contain enough information, say so clearly
-3. Always cite your sources using [Source: filename] format
-4. Be concise but comprehensive
-5. If asked about something not in the context, politely decline
-
-CONTEXT FORMAT:
-Each piece of context includes:
-- Content: The actual text from the document
-- Source: filename and chunk information
-
-Your answer should be helpful, accurate, and well-cited.`,
-  ],
-  [
-    "human",
-    `Context from documents:
-{context}
-
-Question: {question}
-
-Please provide a detailed answer based on the context above, and cite your sources.`,
-  ],
-]);
-
-// Node 1: Retrieve relevant documents
-async function retrieveDocuments(state: RetrievalStateType): Promise<Partial<RetrievalStateType>> {
-  console.log(`🔍 Retrieving documents for question: "${state.question}"`);
-  
+// Basic document retrieval function (replaces the missing retriever)
+async function getRelevantDocuments(question: string, k: number = 6): Promise<DocumentResult[]> {
   try {
-    // Search for relevant documents
-    const documents = await searchDocuments(state.question, config.retrieval.k);
+    // Generate embedding for the question
+    const questionEmbedding = await embeddings.embedQuery(question);
     
-    if (documents.length === 0) {
-      console.log("⚠️  No relevant documents found");
-      return {
-        status: "completed",
-        answer: "I couldn't find any relevant information in the uploaded documents to answer your question. Please make sure you've uploaded relevant PDFs or try rephrasing your question.",
-        sources: [],
-      };
+    // Query Supabase for similar documents
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .order('embedding <=> $1::vector', { ascending: true })
+      .limit(k);
+
+    if (error) {
+      console.error('Document retrieval error:', error);
+      return [];
     }
-    
-    // Format retrieved documents
-    const retrievedDocuments = documents.map((doc: any, index: number) => ({
-      content: doc.pageContent,
-      metadata: doc.metadata || {},
-      score: (doc.metadata as any)?.score || 0.8,
+
+    // Format results
+    return (data || []).map((row: any) => ({
+      pageContent: row.content || '',
+      metadata: {
+        filename: row.filename || 'Unknown',
+        chunkIndex: row.chunk_index || 0,
+        ...row.metadata
+      }
     }));
-    
-    console.log(`✅ Retrieved ${documents.length} relevant documents`);
-    
-    return {
-      status: "generating",
-      retrievedDocuments: retrievedDocuments,
-    };
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Error retrieving documents:", errorMessage);
-    return {
-      status: "failed",
-      error: `Document retrieval failed: ${errorMessage}`,
-    };
+  } catch (error) {
+    console.error('Error retrieving documents:', error);
+    return [];
   }
 }
 
-// Node 2: Generate AI response
-async function generateResponse(state: RetrievalStateType): Promise<Partial<RetrievalStateType>> {
-  console.log("🤖 Generating AI response...");
-  
+// Original simple retrieval function
+export async function runRetrievalSimple(question: string) {
   try {
-    // Format context from retrieved documents
-    const context = state.retrievedDocuments
-      .map((doc: any, index: number) => {
-        const filename = doc.metadata.filename || `Document ${index + 1}`;
-        const chunkIndex = doc.metadata.chunkIndex || 0;
-        
-        return `--- Source: ${filename} (Chunk ${chunkIndex + 1}) ---
-${doc.content}`;
-      })
-      .join("\n\n");
+    console.log(`🔍 Simple retrieval for: "${question}"`);
     
-    if (!context.trim()) {
-      throw new Error("No context available for response generation");
+    // Get relevant documents using our basic retrieval
+    const docs = await getRelevantDocuments(question);
+    
+    if (docs.length === 0) {
+      return { answer: "No relevant documents found for your question.", sources: [] };
     }
-    
-    // Generate response using the RAG prompt
-    const prompt = await RAG_PROMPT.format({
-      context,
-      question: state.question,
-    });
-    
-    const response = await chatModel.invoke(prompt);
-    const answer = response.content as string;
-    
-    // Extract and format sources
-    const sources = state.retrievedDocuments.map((doc: any, index: number) => ({
-      filename: doc.metadata.filename || `Document ${index + 1}`,
-      chunkIndex: doc.metadata.chunkIndex || index,
-      content: doc.content.substring(0, 200) + "...",
-      relevanceScore: doc.score || 0.8,
-    }));
-    
-    console.log(`✅ Generated response (${answer.length} characters)`);
+
+    // Format context
+    const context = docs
+      .map((doc: DocumentResult, index: number) => `Document ${index + 1}:\n${doc.pageContent}`)
+      .join('\n\n');
+
+    // Generate response
+    const prompt = `Based on the following documents, answer the user's question:
+
+${context}
+
+Question: ${question}
+
+Answer:`;
+
+    const response = await model.invoke(prompt);
     
     return {
-      status: "completed",
-      answer: answer,
-      sources: sources,
+      answer: response.content,
+      sources: docs.map((doc: DocumentResult) => ({
+        pageContent: doc.pageContent.slice(0, 200) + '...',
+        metadata: doc.metadata
+      }))
     };
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Error generating response:", errorMessage);
-    return {
-      status: "failed",
-      error: `Response generation failed: ${errorMessage}`,
-    };
+  } catch (error) {
+    console.error('Simple retrieval error:', error);
+    throw error;
   }
 }
 
-// Node 3: Handle completion or errors
-async function handleCompletion(state: RetrievalStateType): Promise<Partial<RetrievalStateType>> {
-  if (state.status === "failed") {
-    console.log("❌ Retrieval process failed");
-    return {
-      answer: `I apologize, but I encountered an error while processing your question: ${state.error}. Please try again or contact support if the issue persists.`,
-      sources: [],
-    };
-  }
-  
-  if (state.status === "completed") {
-    console.log("✅ Retrieval process completed successfully");
-    console.log(`   Question: ${state.question}`);
-    console.log(`   Sources used: ${state.sources.length}`);
-    console.log(`   Answer length: ${state.answer.length} characters`);
-  }
-  
-  return {};
-}
-
-// Create the retrieval graph using Annotation
-const retrievalGraph = new StateGraph(RetrievalState)
-  .addNode("retrieve_documents", retrieveDocuments)
-  .addNode("generate_response", generateResponse)
-  .addNode("handle_completion", handleCompletion)
-  .addEdge("__start__", "retrieve_documents")
-  .addConditionalEdges(
-    "retrieve_documents",
-    (state: RetrievalStateType) => {
-      if (state.status === "failed") return "handle_completion";
-      if (state.status === "completed") return "handle_completion";
-      return "generate_response";
-    }
-  )
-  .addEdge("generate_response", "handle_completion")
-  .addEdge("handle_completion", END);
-
-// Compile the graph
-export const compiledRetrievalGraph = retrievalGraph.compile();
-
-// Helper function to run retrieval and get streaming response
-export async function* runRetrieval(question: string) {
-  console.log("🚀 Starting retrieval process for question...");
-  
+// Original streaming retrieval function
+export async function* runRetrieval(question: string): AsyncGenerator<{ type: string; data: any }> {
   try {
-    const initialState = {
-      question,
-      retrievedDocuments: [],
-      answer: "",
-      sources: [],
-      status: "pending" as const,
-      error: "",
-    };
+    yield { type: 'status', data: 'Starting document retrieval...' };
+
+    // Get relevant documents using our basic retrieval
+    const docs = await getRelevantDocuments(question);
     
-    yield { type: "status", data: "Searching documents..." };
-    
-    const result = await compiledRetrievalGraph.invoke(initialState);
-    
-    if (result.status === "failed") {
-      yield { type: "error", data: result.error || "Unknown error occurred" };
+    if (docs.length === 0) {
+      yield { type: 'error', data: 'No relevant documents found for your question.' };
       return;
     }
+
+    yield { type: 'status', data: `Found ${docs.length} relevant documents. Generating response...` };
+
+    // Format context for LLM
+    const context = docs
+      .map((doc: DocumentResult, index: number) => `Document ${index + 1}:\n${doc.pageContent}`)
+      .join('\n\n');
+
+    // Create prompt
+    const prompt = `Based on the following documents, provide a comprehensive answer to the user's question:
+
+${context}
+
+User Question: ${question}
+
+Instructions:
+1. Provide a detailed, accurate answer based on the documents
+2. Reference specific documents when making claims
+3. If information is incomplete, mention what additional details might be helpful
+
+Answer:`;
+
+    // Stream the response
+    const stream = await model.stream(prompt);
     
-    yield { type: "answer_start", data: "" };
-    
-    const answer = result.answer || "";
-    const chunkSize = 50;
-    
-    for (let i = 0; i < answer.length; i += chunkSize) {
-      const chunk = answer.slice(i, i + chunkSize);
-      yield { type: "answer_chunk", data: chunk };
-      
-      await new Promise(resolve => setTimeout(resolve, 10));
+    for await (const chunk of stream) {
+      if (chunk.content) {
+        yield { type: 'answer_chunk', data: chunk.content };
+      }
     }
-    
-    yield { type: "answer_complete", data: "" };
-    yield { type: "sources", data: result.sources || [] };
-    yield { type: "complete", data: "Response generated successfully" };
-    
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("❌ Retrieval process failed:", errorMessage);
-    yield { type: "error", data: errorMessage };
+
+    // Return sources
+    const sources = docs.map((doc: DocumentResult) => ({
+      filename: doc.metadata.filename || 'Unknown',
+      chunkIndex: doc.metadata.chunkIndex || 0,
+      content: doc.pageContent.slice(0, 200) + '...',
+      relevanceScore: 0.8 // Default score for basic retrieval
+    }));
+
+    yield { type: 'sources', data: sources };
+    yield { type: 'complete', data: 'Retrieval completed successfully' };
+
+  } catch (error) {
+    console.error('Retrieval error:', error);
+    yield { type: 'error', data: `Retrieval failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
 
-// Simple non-streaming version for testing
-export async function runRetrievalSimple(question: string) {
-  console.log("🚀 Starting simple retrieval process...");
-  
-  const initialState = {
-    question,
-    retrievedDocuments: [],
-    answer: "",
-    sources: [],
-    status: "pending" as const,
-    error: "",
-  };
-  
-  const result = await compiledRetrievalGraph.invoke(initialState);
-  
-  console.log("📊 Retrieval process summary:");
-  console.log(`   Status: ${result.status}`);
-  console.log(`   Documents retrieved: ${result.retrievedDocuments?.length || 0}`);
-  console.log(`   Sources: ${result.sources?.length || 0}`);
-  
-  return result;
+// Enhanced retrieval with hybrid search
+export async function* runEnhancedRetrieval(
+  question: string,
+  analysisData?: any
+): AsyncGenerator<{ type: string; data: any }> {
+  try {
+    yield { type: 'status', data: 'Starting enhanced retrieval...' };
+
+    // Step 1: Analyze query if not provided
+    let queryAnalysis = analysisData;
+    if (!queryAnalysis) {
+      queryAnalysis = await queryAnalyzer.analyzeQuery(question);
+      yield { type: 'analysis', data: queryAnalysis };
+    }
+
+    // Step 2: Execute hybrid search
+    yield { type: 'status', data: 'Searching documents with hybrid approach...' };
+    
+    const searchStrategy = queryAnalysis.requires_multiple_docs ? 'multi_step' : 'hybrid';
+    const searchResults = searchStrategy === 'multi_step' 
+      ? await hybridRetriever.multiStepSearch(question, queryAnalysis, config.retrieval.k)
+      : await hybridRetriever.hybridSearch(question, queryAnalysis, config.retrieval.k);
+
+    yield { 
+      type: 'search_metrics', 
+      data: {
+        ...searchResults.metrics,
+        resultsFound: searchResults.results.length
+      }
+    };
+
+    if (searchResults.results.length === 0) {
+      yield { type: 'error', data: 'No relevant documents found for your question.' };
+      return;
+    }
+
+    // Step 3: Format context for LLM
+    const context = searchResults.results
+      .map((doc: any, index: number) => `Document ${index + 1} (${doc.metadata.filename}, relevance: ${Math.round(doc.relevanceScore * 100)}%):\n${doc.pageContent}`)
+      .join('\n\n');
+
+    yield { type: 'status', data: 'Generating AI response...' };
+
+    // Step 4: Generate response with enhanced context
+    const enhancedPrompt = `Based on the following documents, provide a comprehensive answer to the user's question.
+
+Query Analysis:
+- Category: ${queryAnalysis.category}
+- Complexity: ${queryAnalysis.complexity}
+- Confidence: ${Math.round(queryAnalysis.confidence * 100)}%
+
+Search Results (using ${searchResults.metrics.strategy} strategy):
+${context}
+
+User Question: ${question}
+
+Instructions:
+1. Provide a detailed, accurate answer based on the documents
+2. If the question is ${queryAnalysis.complexity}, adjust the explanation accordingly
+3. Reference specific documents when making claims
+4. If information is incomplete, mention what additional details might be helpful
+
+Answer:`;
+
+    // Stream the response
+    const stream = await model.stream(enhancedPrompt);
+    
+    for await (const chunk of stream) {
+      if (chunk.content) {
+        yield { type: 'answer_chunk', data: chunk.content };
+      }
+    }
+
+    // Step 5: Return sources with enhanced metadata
+    const enhancedSources = searchResults.results.map((doc: any) => ({
+      filename: doc.metadata.filename,
+      chunkIndex: doc.metadata.chunkIndex,
+      content: doc.pageContent.slice(0, 200) + '...',
+      relevanceScore: doc.relevanceScore,
+      searchMethod: doc.searchMethod,
+      semanticScore: doc.semanticScore,
+      keywordScore: doc.keywordScore
+    }));
+
+    yield { type: 'sources', data: enhancedSources };
+    yield { type: 'complete', data: 'Enhanced retrieval completed successfully' };
+
+  } catch (error) {
+    console.error('Enhanced retrieval error:', error);
+    yield { type: 'error', data: `Enhanced retrieval failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
 }
-  

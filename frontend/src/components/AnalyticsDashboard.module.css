@@ -1,0 +1,397 @@
+.dashboardContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  background-color: #f8fafc;
+  min-height: 100vh;
+}
+
+.dashboardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.dashboardTitle {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #1e293b;
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.refreshButton {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+}
+
+.refreshButton:hover {
+  background-color: #2563eb;
+}
+
+.lastUpdated {
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.loadingState,
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+  text-align: center;
+}
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.retryButton {
+  background-color: #dc2626;
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.retryButton:hover {
+  background-color: #b91c1c;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.metricCard {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.cardHeader {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem;
+}
+
+.cardHeader h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.cardContent {
+  padding: 1.5rem;
+}
+
+.metricRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.metricRow:last-child {
+  border-bottom: none;
+}
+
+.metricLabel {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.metricValue {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #1e293b;
+}
+
+.successMetric {
+  color: #059669;
+}
+
+.errorMetric {
+  color: #dc2626;
+}
+
+.chartsSection {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.chartCard {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+}
+
+.chartTitle {
+  margin: 0 0 1rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.barChart {
+  display: flex;
+  align-items: end;
+  justify-content: space-around;
+  height: 150px;
+  gap: 0.5rem;
+}
+
+.barItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.bar {
+  background: linear-gradient(to top, #3b82f6, #60a5fa);
+  border-radius: 0.25rem 0.25rem 0 0;
+  width: 100%;
+  min-height: 2px;
+  transition: all 0.3s ease;
+}
+
+.bar:hover {
+  background: linear-gradient(to top, #2563eb, #3b82f6);
+}
+
+.barLabel {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.queryList,
+.documentList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.queryItem,
+.documentItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background-color: #f8fafc;
+  border-radius: 0.375rem;
+  border: 1px solid #e2e8f0;
+}
+
+.queryText,
+.documentName {
+  font-size: 0.875rem;
+  color: #374151;
+  flex: 1;
+}
+
+.queryCount,
+.documentCount {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fullWidthCard {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.timelineChart {
+  display: flex;
+  align-items: end;
+  justify-content: space-around;
+  height: 120px;
+  gap: 2px;
+  margin-bottom: 1rem;
+}
+
+.timelinePoint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.timelineBar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 2px;
+}
+
+.questionsBar {
+  background-color: #3b82f6;
+  border-radius: 2px;
+  width: 80%;
+  min-height: 2px;
+}
+
+.uploadsBar {
+  background-color: #10b981;
+  border-radius: 2px;
+  width: 80%;
+  min-height: 2px;
+}
+
+.timelineLabel {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.chartLegend {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legendColor {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .dashboardContainer {
+    padding: 1rem;
+  }
+
+  .dashboardHeader {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .chartsSection {
+    grid-template-columns: 1fr;
+  }
+
+  .barChart {
+    height: 100px;
+  }
+
+  .timelineChart {
+    height: 80px;
+  }
+}
+
+/* Dynamic height classes for bars */
+.bar[data-height] {
+  height: calc(var(--height, 2) * 1%);
+  min-height: 2px;
+}
+
+.questionsBar[data-height] {
+  height: calc(var(--height, 2) * 1px);
+  min-height: 2px;
+}
+
+.uploadsBar[data-height] {
+  height: calc(var(--height, 2) * 1px);
+  min-height: 2px;
+}
+
+/* Legend colors as CSS classes */
+.questionsColor {
+  background-color: #3b82f6;
+}
+
+.uploadsColor {
+  background-color: #10b981;
+}
+
+/* CSS custom properties for dynamic heights */
+.bar[data-height="0"] { height: 2px; }
+.bar[data-height="10"] { height: 10%; }
+.bar[data-height="20"] { height: 20%; }
+.bar[data-height="30"] { height: 30%; }
+.bar[data-height="40"] { height: 40%; }
+.bar[data-height="50"] { height: 50%; }
+.bar[data-height="60"] { height: 60%; }
+.bar[data-height="70"] { height: 70%; }
+.bar[data-height="80"] { height: 80%; }
+.bar[data-height="90"] { height: 90%; }
+.bar[data-height="100"] { height: 100%; }
+
+.questionsBar[data-height="0"] { height: 2px; }
+.questionsBar[data-height="10"] { height: 10px; }
+.questionsBar[data-height="20"] { height: 20px; }
+.questionsBar[data-height="30"] { height: 30px; }
+.questionsBar[data-height="40"] { height: 40px; }
+.questionsBar[data-height="50"] { height: 50px; }
+.questionsBar[data-height="60"] { height: 60px; }
+
+.uploadsBar[data-height="0"] { height: 2px; }
+.uploadsBar[data-height="10"] { height: 10px; }
+.uploadsBar[data-height="20"] { height: 20px; }
+.uploadsBar[data-height="30"] { height: 30px; }
+.uploadsBar[data-height="40"] { height: 40px; }
+
+/* Keep all your existing CSS from the original file... */
