@@ -64,7 +64,6 @@ export default function Home() {
     scrollToBottom();
   }, [messages]);
 
-  // File upload with drag & drop
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     console.log('Files dropped:', acceptedFiles);
     
@@ -78,7 +77,6 @@ export default function Home() {
       return;
     }
 
-    // Check file sizes
     const oversizedFiles = pdfFiles.filter(file => file.size > 10 * 1024 * 1024);
     if (oversizedFiles.length > 0) {
       setUploadStatus({
@@ -101,8 +99,8 @@ export default function Home() {
 
       console.log('Sending request to backend...');
 
-      // ✅ FIXED: Added /ingest endpoint
-      const response = await axios.post<UploadResponse>('https://ai-pdf-chatbot-backend-hjfo.onrender.com/ingest', formData, {
+      // ✅ RELATIVE URL - No CORS issues
+      const response = await axios.post<UploadResponse>('/ingest', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -134,7 +132,7 @@ export default function Home() {
           errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
           console.log('Server error response:', error.response.data);
         } else if (error.request) {
-          errorMessage = 'No response from server. Check if backend is running.';
+          errorMessage = 'No response from server. Please try again.';
         } else {
           errorMessage = error.message;
         }
@@ -157,7 +155,6 @@ export default function Home() {
     maxFiles: 5,
   });
 
-  // Send chat message with streaming
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -172,8 +169,8 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      // ✅ FIXED: Added /chat endpoint
-      const response = await fetch('https://ai-pdf-chatbot-backend-hjfo.onrender.com/chat', {
+      // ✅ RELATIVE URL - No CORS issues
+      const response = await fetch('/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -271,7 +268,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -283,7 +279,6 @@ export default function Home() {
       </header>
 
       <div className="flex-1 max-w-4xl mx-auto w-full px-4 py-6 flex flex-col gap-6">
-        {/* Upload Area */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Upload className="h-5 w-5 text-blue-600" />
@@ -318,7 +313,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Upload Status */}
           <div className={`mt-4 p-3 rounded-lg flex items-start gap-2 ${
             uploadStatus.status === 'success' ? 'bg-green-50 border border-green-200' :
             uploadStatus.status === 'error' ? 'bg-red-50 border border-red-200' :
@@ -352,7 +346,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Chat Area */}
         <div className="bg-white rounded-lg shadow-sm border flex-1 flex flex-col">
           <div className="p-4 border-b">
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -360,7 +353,6 @@ export default function Home() {
             </h2>
           </div>
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 ? (
               <div className="text-center py-12">
@@ -377,7 +369,6 @@ export default function Home() {
                   }`}>
                     <p className="whitespace-pre-wrap">{message.content}</p>
                     
-                    {/* Sources */}
                     {message.sources && message.sources.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-sm font-medium text-gray-600 mb-2">📄 Sources:</p>
@@ -415,7 +406,6 @@ export default function Home() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Area */}
           <div className="p-4 border-t">
             <div className="flex gap-2">
               <textarea

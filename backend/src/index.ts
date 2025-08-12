@@ -1,26 +1,25 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config } from './shared/config.js';
 import { compiledIngestionGraph, runIngestion } from './graphs/ingestion.js';
 import { compiledRetrievalGraph, runRetrieval, runRetrievalSimple } from './graphs/retrieval.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
-// Middleware - FIXED CORS Configuration for all Vercel URLs
-app.use(cors({
-  origin: [
-    "http://localhost:3000", // Local development
-    "https://ai-pdf-rag-frontend-axnxxh1vn-hasti-panchals-projects.vercel.app", // ✅ Your current Vercel URL
-    /https:\/\/.*\.vercel\.app$/, // ✅ Regex pattern for all Vercel apps
-    "*" // ✅ Allows all origins - fallback solution
-  ],
-  credentials: false, // Must be false when using wildcard
-}));
-
+// Middleware
+app.use(cors());
 app.use(express.json());
 
-// Configure multer for file uploads - FIXED VERSION
+// Serve static frontend files FIRST
+app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+
+// Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -28,17 +27,16 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
-      cb(null, true); // ✅ Accept the file
+      cb(null, true);
     } else {
-      cb(null, false); // ✅ Fixed: Changed from Error to null, false
+      cb(null, false);
     }
   },
 });
 
-// Health check endpoint
+// API Routes
 app.get('/health', async (req, res) => {
   try {
-    // Test database connection and retrieval system
     const healthStatus = {
       status: "healthy",
       timestamp: new Date().toISOString(),
@@ -46,7 +44,6 @@ app.get('/health', async (req, res) => {
       retriever: "✅ Working",
       openai: "✅ Configured",
     };
-
     res.json(healthStatus);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -58,7 +55,6 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// PDF ingestion endpoint
 app.post('/ingest', upload.array('files', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -70,7 +66,6 @@ app.post('/ingest', upload.array('files', 5), async (req, res) => {
 
     const files = req.files as Express.Multer.File[];
     
-    // Additional validation for rejected files
     const invalidFiles = files.filter(file => file.mimetype !== 'application/pdf');
     if (invalidFiles.length > 0) {
       return res.status(400).json({
@@ -125,7 +120,6 @@ app.post('/ingest', upload.array('files', 5), async (req, res) => {
   }
 });
 
-// Streaming chat endpoint
 app.post('/chat', async (req, res) => {
   try {
     const { question } = req.body;
@@ -138,9 +132,6 @@ app.post('/chat', async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*', // ✅ Additional CORS header for streaming
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
     });
 
     const stream = runRetrieval(question);
@@ -159,7 +150,6 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-// Simple chat endpoint (non-streaming)
 app.post('/chat-simple', async (req, res) => {
   try {
     const { question } = req.body;
@@ -184,7 +174,6 @@ app.post('/chat-simple', async (req, res) => {
   }
 });
 
-// Available graphs endpoint
 app.get('/graphs', (req, res) => {
   res.json({
     available_graphs: [
@@ -200,6 +189,11 @@ app.get('/graphs', (req, res) => {
       },
     ],
   });
+});
+
+// Serve frontend for all other routes (MUST BE LAST)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
 });
 
 // Error handling middleware
@@ -221,7 +215,6 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-// Start server - FIXED with proper host binding and TypeScript error resolved
 async function startServer() {
   try {
     console.log('🚀 Starting AI PDF Chatbot server...');
@@ -235,7 +228,6 @@ async function startServer() {
 
     console.log('\n🔍 Testing connections...');
 
-    // Test ingestion workflow
     await compiledIngestionGraph.invoke({
       files: [],
       processedFiles: [],
@@ -245,17 +237,15 @@ async function startServer() {
     });
     console.log('✅ Supabase connection successful');
 
-    // Test retrieval workflow  
     await runRetrievalSimple("test query");
     console.log('✅ Retriever and embeddings working correctly');
 
-    // ✅ FIXED: Use config.server.port (already a number) and bind to all interfaces
     app.listen(config.server.port, '0.0.0.0', () => {
       console.log(`\n✅ Server running successfully on 0.0.0.0:${config.server.port}!`);
+      console.log(`📍 Frontend: http://localhost:${config.server.port}`);
       console.log(`📍 Health check: http://localhost:${config.server.port}/health`);
       console.log(`📤 Upload PDFs: POST http://localhost:${config.server.port}/ingest`);
       console.log(`💬 Ask questions: POST http://localhost:${config.server.port}/chat`);
-      console.log(`📊 Available graphs: GET http://localhost:${config.server.port}/graphs`);
       console.log(`\n🎯 Ready to process PDFs and answer questions!`);
     });
 
