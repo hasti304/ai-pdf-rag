@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "cd ../frontend && npm install && npm run build && cd ../backend && npm install && tsc",
+    "build": "npm install && tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "jest",
