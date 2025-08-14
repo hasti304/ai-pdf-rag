@@ -1,0 +1,158 @@
+/* Cluster color indicators */
+.cluster-color-indicator {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  margin-right: 0.75rem;
+}
+
+.cluster-indicator {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  margin-right: 0.75rem;
+}
+
+/* Dynamic cluster colors */
+.cluster-indicator[data-cluster-color="blue"] {
+  background-color: #3b82f6;
+}
+
+.cluster-indicator[data-cluster-color="green"] {
+  background-color: #10b981;
+}
+
+.cluster-indicator[data-cluster-color="red"] {
+  background-color: #ef4444;
+}
+
+.cluster-indicator[data-cluster-color="yellow"] {
+  background-color: #f59e0b;
+}
+
+.cluster-indicator[data-cluster-color="purple"] {
+  background-color: #8b5cf6;
+}
+
+/* Cluster visualization */
+.cluster-visualization {
+  min-height: 500px;
+}
+
+.visualization-placeholder {
+  border: 2px dashed #d1d5db;
+  border-radius: 0.5rem;
+  padding: 3rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.visualization-placeholder:hover {
+  border-color: #6b7280;
+  background-color: #f9fafb;
+}
+
+/* Document manager layout */
+.document-manager-container {
+  min-height: 100vh;
+  background-color: #f9fafb;
+}
+
+.document-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+/* Upload zones */
+.upload-zone-default {
+  border-color: #d1d5db;
+}
+
+.upload-zone-default:hover {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.upload-zone-active {
+  border-color: #3b82f6;
+  background-color: #dbeafe;
+}
+
+.upload-zone-uploading {
+  border-color: #10b981;
+  background-color: #d1fae5;
+}
+
+/* Progress bars */
+.progress-container-large {
+  width: 100%;
+  background-color: #e5e7eb;
+  border-radius: 9999px;
+  height: 0.5rem;
+}
+
+.progress-bar-upload {
+  background-color: #3b82f6;
+  height: 0.5rem;
+  border-radius: 9999px;
+  width: 45%;
+  animation: progress-animation 2s ease-in-out infinite;
+}
+
+@keyframes progress-animation {
+  0% { width: 10%; }
+  50% { width: 60%; }
+  100% { width: 45%; }
+}
+
+/* Document table */
+.document-table-container {
+  overflow-x: auto;
+}
+
+.document-table-container table {
+  min-width: 100%;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 0.5rem;
+  max-width: 42rem;
+  width: 100%;
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .document-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .visualization-placeholder {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .document-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
